@@ -111,11 +111,8 @@ def check_collisions(radius, cell_size, grid_width, grid_height, particles):
                                 dist_pos = a.pos - b.pos
                                 dist = np.linalg.norm(dist_pos)
                                 if dist < radius * 2:
-                                    # Separation to avoid sticking
+                                    # Compute direction of collision
                                     direction = dist_pos / dist if dist != 0 else np.array([1.0, 0.0])
-                                    overlap = 2 * radius - dist
-                                    a.pos += direction * (overlap / 2)
-                                    b.pos -= direction * (overlap / 2)
 
                                     # Damage calculation, the force is the difference in velocities
                                     # and the damage is the minimum of the force and the minimum HP of both particles,
