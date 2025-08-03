@@ -1,4 +1,4 @@
-# particle-arena
+# fIGht-club
 A Python-based interactive particle simulation where each particle represents a player. Particles move around, collide, and lose health based on collision force. The last particle alive wins!
 
 TODO:
