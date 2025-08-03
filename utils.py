@@ -78,12 +78,35 @@ def load_particles(radius, max_hp, max_speed, acc_magnitude, width, height, imag
 
     return particles
 
+def create_log(particle_a, particle_b, force_a, force_b, timestamp):
+    killed_a = not particle_a.alive
+    killed_b = not particle_b.alive
+
+    log_entries = [
+        {
+            'Particle': particle_a.id,
+            'Opponent': particle_b.id,
+            'Force Received': force_b,
+            'HP After': particle_a.hp,
+            'Killed': killed_a
+        },
+        {
+            'Particle': particle_b.id,
+            'Opponent': particle_a.id,
+            'Force Received': force_a,
+            'HP After': particle_b.hp,
+            'Killed': killed_b
+        }
+    ]
+    with open(f'simulations/{timestamp}_collision_log.csv', 'a') as f:
+        pd.DataFrame(log_entries).to_csv(f, header=f.tell() == 0, index=False)
+
 # Get grid cell coordinates for a position
 def get_cell_coords(pos, cell_size):
     return int(pos[0] // cell_size), int(pos[1] // cell_size)
 
 # Check collisions using a grid-based approach
-def check_collisions(radius, cell_size, grid_width, grid_height, particles):
+def check_collisions(radius, cell_size, grid_width, grid_height, particles, timestamp):
 
     # Create empty grid
     grid = [[[] for _ in range(grid_height)] for _ in range(grid_width)]
@@ -114,6 +137,11 @@ def check_collisions(radius, cell_size, grid_width, grid_height, particles):
                                     # Compute direction of collision
                                     direction = dist_pos / dist if dist != 0 else np.array([1.0, 0.0])
 
+                                    # Repel particles slightly to avoid sticking
+                                    repel_distance = 0.1 * radius
+                                    a.pos += direction * repel_distance
+                                    b.pos -= direction * repel_distance
+
                                     # Damage calculation, the force is the difference in velocities
                                     # and the damage is the minimum of the force and the minimum HP of both particles,
                                     # so only one particle can be eliminated at a time.
@@ -137,6 +165,8 @@ def check_collisions(radius, cell_size, grid_width, grid_height, particles):
                                     # Update velocities
                                     a.vel += (new_v1 - v1) * direction
                                     b.vel += (new_v2 - v2) * direction
+
+                                    create_log(a, b, min(force_a, min_hp), min(force_b, min_hp), timestamp)
 
 def display_winner(font, particles, screen, width, height, radius):
     winner_shown = True

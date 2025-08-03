@@ -3,6 +3,7 @@ import random
 import moviepy as mpy
 
 from utils import load_config, get_dynamic_radius, load_particles, check_collisions, display_winner, add_particle_to_frames, remove_dead_particles
+import datetime
 
 
 # Initialize global variables
@@ -34,6 +35,9 @@ pygame.display.set_caption("Particle Simulation")
 clock = pygame.time.Clock()
 font = pygame.font.SysFont(None, 24)
 
+# Create a timestamp 
+timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+
 # Init frames
 frames = []
 
@@ -63,8 +67,9 @@ while running:
     
     # Show count of alive particles
     alive_count = sum(1 for p in particles if p.alive)
-    text = font.render(f"Alive: {alive_count}", True, (255,255,255))
-    screen.blit(text, (10, 10))   
+    font_big = pygame.font.SysFont(None, 36)
+    text = font_big.render(f"Alive: {alive_count}", True, (255,255,255))
+    screen.blit(text, (30, 30))
 
     # Show winner if only one particle remains
     if alive_count == 1 and not winner_shown:
@@ -75,7 +80,7 @@ while running:
         pygame.time.wait(2000)
         running = False
 
-    check_collisions(RADIUS, CELL_SIZE, grid_width, grid_height, particles)
+    check_collisions(RADIUS, CELL_SIZE, grid_width, grid_height, particles, timestamp)
 
     # Remove dead particles from the list
     particles = remove_dead_particles(particles)
@@ -88,7 +93,6 @@ while running:
 frames += [frames[-1]] * 2 * FPS  # Assuming 60 FPS
 
 clip = mpy.ImageSequenceClip(frames, fps=FPS)
-random_number = random.randint(1000, 9999)
-clip.write_videofile(f"simulations/simulation_{random_number}.mp4", codec='libx264')
+clip.write_videofile(f"simulations/{timestamp}_simulation.mp4", codec='libx264')
 
 pygame.quit()
