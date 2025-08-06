@@ -3,8 +3,9 @@ import numpy as np
 import random
 import math
 
+
 class Particle:
-    def __init__(self, pid, image, radius, max_hp, max_speed, acc_magnitude, width, height):
+    def __init__(self, pid, image, radius, max_hp, max_speed, acc_magnitude, width, height, position):
         self.id = pid
         self.image = image
         self.radius = radius
@@ -12,9 +13,9 @@ class Particle:
         self.max_speed = max_speed
         self.acc_magnitude = acc_magnitude
         self.width = width
-        self.height = height    
+        self.height = height  
         # Random initial position within bounds
-        self.pos = np.array([random.uniform(radius, width - radius), random.uniform(radius, height - radius)], dtype=float)
+        self.pos = position
         angle = random.uniform(0, 2 * math.pi)
         speed = random.uniform(2, 4)
         # Initial velocity vector

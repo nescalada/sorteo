@@ -1,8 +1,10 @@
+from turtle import width
 import yaml
 import pygame
 import numpy as np
 import os
 import pandas as pd
+import random
 
 from particle import Particle
 import requests
@@ -14,16 +16,23 @@ def load_config(path='config.yaml'):
         return yaml.safe_load(f)
 
 # Calculate dynamic radius based on number of particles
-def get_dynamic_radius(particles, min_radius, max_radius):
+def get_dynamic_radius(particles, width, height, min_radius, max_radius, change_radius=True):
     num_particles = len(particles)
-    # Inverse relation: more particles, smaller radius
-    radius = max(min_radius, min(max_radius, int(4000 / (num_particles + 20))))
+    best_radius = min_radius
 
-    # Ensure all particles have the same radius
-    for p in particles:
-        p.radius = radius
+    for r in range(max_radius, min_radius - 1, -1):
+        cell_size = 4 * r 
+        cols = width // cell_size
+        rows = height // cell_size
+        if cols * rows >= num_particles:
+            best_radius = r
+            break
 
-    return radius
+    if change_radius:
+        for p in particles:
+            p.radius = best_radius
+
+    return best_radius
 
 # Create a circular mask for particle images
 def circular_mask(image):
@@ -33,7 +42,33 @@ def circular_mask(image):
     image.blit(mask_surface, (0, 0), special_flags=pygame.BLEND_RGBA_MIN)
     return image
 
-def load_particles(radius, max_hp, max_speed, acc_magnitude, width, height, image_path, local_images):
+# Assign positions for particles in a grid-like manner to avoid overlap
+def assign_position(radius, width, height, num_particles):
+        cell_size = 2 * radius + 2
+        cols = int(width // cell_size)
+        rows = int(height // cell_size)
+
+        if num_particles > cols * rows:
+            raise ValueError("Not enough space to place all particles without overlap.")
+
+        available_cells = [(col, row) for col in range(cols) for row in range(rows)]
+        random.shuffle(available_cells)
+
+        positions = []
+
+        for i in range(num_particles):
+            if not available_cells:
+                raise RuntimeError("Not enough space to place all particles without overlap.")
+
+            col, row = available_cells.pop()
+            x = col * cell_size + radius
+            y = row * cell_size + radius
+            positions.append(np.array([float(x), float(y)]))
+
+        return positions
+
+# Load particles from a CSV file
+def load_particles(min_radius, max_radius, max_hp, max_speed, acc_magnitude, width, height, image_path, local_images):
 
     if local_images:
         # Read how many particle images are available
@@ -45,8 +80,12 @@ def load_particles(radius, max_hp, max_speed, acc_magnitude, width, height, imag
         # Load and mask particle images
         particle_images = [circular_mask(pygame.image.load(f'{image_path}/particle_{i}.png').convert_alpha()) for i in range(num_particles)]
 
+        radius = get_dynamic_radius(particle_images, width, height, min_radius, max_radius, change_radius=False)
+
+        positions = assign_position(radius, width, height, num_particles)
+
         # Create particles
-        particles = [Particle(i, particle_images[i], radius, max_hp, max_speed, acc_magnitude, width, height) for i in range(num_particles)]
+        particles = [Particle(i, particle_images[i], radius, max_hp, max_speed, acc_magnitude, width, height, positions[i]) for i in range(num_particles)]
     
     else:
         # Ensure image_path is a CSV file, not a directory
@@ -73,8 +112,14 @@ def load_particles(radius, max_hp, max_speed, acc_magnitude, width, height, imag
             particle_images.append(circular_mask(image))
             usernames.append(row['Username'])
 
+        num_particles = len(particle_images)
+
+        radius = get_dynamic_radius(particle_images, width, height, min_radius, max_radius, change_radius=False)
+
+        positions = assign_position(radius, width, height, num_particles)
+
         # Create particles
-        particles = [Particle(usernames[i], particle_images[i], radius, max_hp, max_speed, acc_magnitude, width, height) for i in range(len(particle_images))]
+        particles = [Particle(usernames[i], particle_images[i], radius, max_hp, max_speed, acc_magnitude, width, height, positions[i]) for i in range(num_particles)]
 
     return particles
 

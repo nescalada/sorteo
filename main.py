@@ -33,7 +33,7 @@ pygame.init()
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption("Particle Simulation")
 clock = pygame.time.Clock()
-font = pygame.font.SysFont(None, 24)
+font = pygame.font.SysFont(None, 36)
 
 # Create a timestamp 
 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -42,7 +42,7 @@ timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 frames = []
 
 # Load particles
-particles = load_particles(MIN_RADIUS, MAX_HP, MAX_SPEED, ACC_MAGNITUDE, WIDTH, HEIGHT, IMG_PATH, LOCAL_IMAGES)
+particles = load_particles(MIN_RADIUS, MAX_RADIUS, MAX_HP, MAX_SPEED, ACC_MAGNITUDE, WIDTH, HEIGHT, IMG_PATH, LOCAL_IMAGES)
 num_particles = len(particles)
 
 # Main loop
@@ -54,7 +54,7 @@ while running:
         if event.type == pygame.QUIT:
             running = False
 
-    RADIUS = get_dynamic_radius(particles, MIN_RADIUS, MAX_RADIUS)
+    RADIUS = get_dynamic_radius(particles, WIDTH, HEIGHT, MIN_RADIUS, MAX_RADIUS)
 
     CELL_SIZE = RADIUS * 2
     grid_width = WIDTH // CELL_SIZE + 1
@@ -67,8 +67,7 @@ while running:
     
     # Show count of alive particles
     alive_count = sum(1 for p in particles if p.alive)
-    font_big = pygame.font.SysFont(None, 36)
-    text = font_big.render(f"Alive: {alive_count}", True, (255,255,255))
+    text = font.render(f"Alive: {alive_count}", True, (255,255,255))
     screen.blit(text, (30, 30))
 
     # Show winner if only one particle remains
