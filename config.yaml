@@ -1,0 +1,19 @@
+screen:
+  width: 1920
+  height: 1080
+  fps: 60
+
+particles:
+  min_radius: 2
+  max_radius: 100
+  max_hp: 100
+  max_speed: 100000
+  acc_magnitude: 0.01
+
+colors:
+  background: [10, 10, 10]
+
+images:
+  local: false
+  #path: "img"
+  path: followers_info
