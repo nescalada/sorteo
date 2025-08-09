@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 
 python simulation.py
 python utils/log_manager.py

@@ -54,7 +54,6 @@ if selected_date == "All Time":
         "Kills": lambda p: log_manager.get_kills(data, p),
         "Deaths": lambda p: log_manager.get_deaths(data, p),
         "Damage Dealt": lambda p: log_manager.get_damage_dealt(data, p),
-        "Damage Received": lambda p: log_manager.get_damage_received(data, p),
     }
 else:
     stat_options = {
