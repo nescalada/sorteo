@@ -67,53 +67,67 @@ def create_interaction_graph(log_data):
 
     return {p: dict(opp) for p, opp in interaction_graph.items()}
 
-def get_damage_dealt(interaction_graph, particle):
-    return sum(stats['dmg_dealt'] for stats in interaction_graph.get(particle, {}).values())
+def get_damage_dealt(graph, particle):
+    return sum(stats['dmg_dealt'] for stats in graph.get(particle, {}).values())
 
-def get_damage_received(interaction_graph, particle):
-    return sum(stats.get(particle, {}).get('dmg_dealt', 0.0) for stats in interaction_graph.values())
+def get_damage_received(graph, particle):
+    return sum(stats.get(particle, {}).get('dmg_dealt', 0.0) for stats in graph.values())
 
-def get_kills(interaction_graph, particle):
-    return sum(stats['kills'] for stats in interaction_graph.get(particle, {}).values())
+def get_kills(graph, particle):
+    return sum(stats['kills'] for stats in graph.get(particle, {}).values())
 
-def get_deaths(interaction_graph, particle):
-    return sum(stats.get(particle, {}).get('kills', 0) for stats in interaction_graph.values())
+def get_deaths(graph, particle):
+    return sum(stats.get(particle, {}).get('kills', 0) for stats in graph.values())
 
-def get_top_killer(interaction_graph):
+def get_top_killer(graph):
     return max(
-        ((p, get_kills(interaction_graph, p)) for p in interaction_graph),
+        ((p, get_kills(graph, p)) for p in graph),
         key=lambda x: x[1],
         default=(None, 0)
     )
 
-def get_top_damage_dealer(interaction_graph):
+def get_nemesis(graph, particle):
+    # Returns the particle that killed 'particle' the most
+    nemesis = None
+    max_kills = 0
+    for attacker, victims in graph.items():
+        kills = victims.get(particle, {}).get('kills', 0)
+        if kills > max_kills:
+            max_kills = kills
+            nemesis = attacker
+    return nemesis
+
+def get_victim(graph, particle):
+    return max(graph[particle].items(), key=lambda x: x[1]['kills'], default=(None, 0))[0]
+
+def get_top_damage_dealer(graph):
     return max(
-        ((p, get_damage_dealt(interaction_graph, p)) for p in interaction_graph),
+        ((p, get_damage_dealt(graph, p)) for p in graph),
         key=lambda x: x[1],
         default=(None, 0)
     )
 
-def get_top_damage_receiver(interaction_graph):
+def get_top_damage_receiver(graph):
     return max(
-        ((p, get_damage_received(interaction_graph, p)) for p in interaction_graph),
+        ((p, get_damage_received(graph, p)) for p in graph),
         key=lambda x: x[1],
         default=(None, 0)
     )
 
-def get_top_death_count(interaction_graph):
+def get_top_death_count(graph):
     return max(
-        ((p, get_deaths(interaction_graph, p)) for p in interaction_graph),
+        ((p, get_deaths(graph, p)) for p in graph),
         key=lambda x: x[1],
         default=(None, 0)
     )
 
-def get_winner(interaction_graph):
-    alive_particles = {p for p in interaction_graph if get_deaths(interaction_graph, p) == 0}
+def get_winner(graph):
+    alive_particles = {p for p in graph if get_deaths(graph, p) == 0}
     if len(alive_particles) == 1:
         return list(alive_particles)
     return None
 
-def settle_day(interaction_graph, filenames):
+def settle_day(graph, filenames):
     if not filenames:
         print("No files to settle.")
         return
@@ -129,10 +143,10 @@ def settle_day(interaction_graph, filenames):
     with open(outfile, 'w') as f:
         json.dump({
             "date": timestamp,
-            "winner": get_top_killer(interaction_graph)[0],
-            "interactions": interaction_graph
+            "winner": get_top_killer(graph)[0],
+            "interactions": graph
         }, f)
-    print(f"✅ Daily results saved: {outfile}")
+    print(f"Daily results saved: {outfile}")
 
 
 def main(args):
@@ -189,6 +203,7 @@ def main(args):
 
         if should_generate_daily:
             winner = get_winner(daily_graph)[0]
+            
             with open(daily_file, 'w') as f:
                 json.dump({
                     "date": iso_date,
@@ -210,11 +225,6 @@ def main(args):
     save_processed_files(processed_files)
     save_cached_graph(cached_graph)
 
-    print("\n Updated stats:")
-    print(f"Top killer: {get_top_killer(cached_graph)}")
-    print(f"Top damage dealer: {get_top_damage_dealer(cached_graph)}")
-    print(f"Top damage receiver: {get_top_damage_receiver(cached_graph)}")
-    print(f"Top deaths: {get_top_death_count(cached_graph)}")
     print(f"\n Processing complete in {time.time() - start:.2f}s")
 
 if __name__ == "__main__":

@@ -2,7 +2,7 @@ import pygame
 import random
 import moviepy as mpy
 
-from utils import load_config, get_dynamic_radius, load_particles, check_collisions, display_winner, add_particle_to_frames, remove_dead_particles
+from utils.helpers import load_config, get_dynamic_radius, load_particles, check_collisions, display_winner, add_particle_to_frames, remove_dead_particles
 import datetime
 
 
