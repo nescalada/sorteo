@@ -1,6 +1,7 @@
 .env
 instaloader_script.py
 obtain_followers.py
+obtain_followers_deprecated.py
 *.png
 *.mp4 
 *.csv
