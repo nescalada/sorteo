@@ -21,12 +21,19 @@ def load_daily_graph(date_str):
         daily_data = json.load(f)
     return daily_data["interactions"], daily_data["winner"]
 
+
+@st.cache_data(ttl=300)
+def load_daily_ranking(date_str):
+    path = f"data/daily/ranking/{date_str}_ranking.json"
+    abs_path = os.path.join(os.path.dirname(__file__), path)
+    with open(abs_path, 'r') as f:
+        return json.load(f)
+
 def get_available_dates():
     pattern = os.path.join(os.path.dirname(__file__), "data/daily/*.json")
     files = glob.glob(pattern)
     # Extract just YYYY-MM-DD from filenames
     return sorted([os.path.splitext(os.path.basename(f))[0] for f in files], reverse=True)
-
 
 def get_wins(available_dates, player):
     wins = 0
@@ -47,6 +54,7 @@ if selected_date == "All Time":
     data = load_interaction_graph()
 else:
     data, winner = load_daily_graph(selected_date)
+    ranking = load_daily_ranking(selected_date)
 
 if selected_date == "All Time":
     stat_options = {
@@ -106,11 +114,24 @@ with tab2:
         return f"https://instagram.com/{player}"
 
     st.header(f"📊 Stats for [{selected_player}](https://instagram.com/{selected_player})")
-    col1, col2 = st.columns(2)
-    col1.metric("💥 Damage Dealt", f"{log_manager.get_damage_dealt(data, selected_player):.2f}")
-    col1.metric("🔪 Kills", log_manager.get_kills(data, selected_player))
-    col2.metric("🩸 Damage Received", f"{log_manager.get_damage_received(data, selected_player):.2f}")
-    col2.metric("☠️ Deaths", log_manager.get_deaths(data, selected_player))
+
+
+    cols = st.columns(2)
+    with cols[0]:
+        st.metric("💥 Damage Dealt", f"{log_manager.get_damage_dealt(data, selected_player):.2f}")
+        st.metric("🔪 Kills", log_manager.get_kills(data, selected_player))
+    with cols[1]:
+        st.metric("🩸 Damage Received", f"{log_manager.get_damage_received(data, selected_player):.2f}")
+        st.metric("☠️ Deaths", log_manager.get_deaths(data, selected_player))
+
+    if selected_date == "All Time":
+        st.metric("🏅 Wins", get_wins(available_dates, selected_player))
+    else:
+        rank_player = ranking.get(selected_player)
+        if rank_player == 0:
+            st.metric("Ranking", "👑 WINNER! The arena bows to your unmatched skill!")
+        else:
+            st.metric("Ranking", rank_player)
 
     # Nemesis and Victim calculation
     interactions = data[selected_player]

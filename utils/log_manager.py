@@ -9,11 +9,13 @@ from datetime import datetime
 PROCESSED_FILE_PATH = 'data/processed_logs/processed_files.json'
 GRAPH_CACHE_PATH = 'data/historic_stats/interaction_graph.json'
 DAILY_RESULTS_DIR = 'data/daily/'
+DAILY_RANKING_PATH = 'data/daily/ranking/'
 
 # Ensure the files exist
 os.makedirs(os.path.dirname(PROCESSED_FILE_PATH), exist_ok=True)
 os.makedirs(os.path.dirname(GRAPH_CACHE_PATH), exist_ok=True)
 os.makedirs(DAILY_RESULTS_DIR, exist_ok=True)
+os.makedirs(DAILY_RANKING_PATH, exist_ok=True)
 
 def load_processed_files():
     if os.path.exists(PROCESSED_FILE_PATH):
@@ -66,6 +68,25 @@ def create_interaction_graph(log_data):
         interaction_graph[opponent][particle]['kills'] += kill_count
 
     return {p: dict(opp) for p, opp in interaction_graph.items()}
+
+def create_ranking_file(log_data, iso_date):
+    ranking = defaultdict(int)
+    position = 2
+    for entry in reversed(log_data):
+        particle = entry.get('Particle')
+        killed = entry.get('Killed')
+        # Only rank if not already ranked (there was a bug on 2025-08-09, where a particle appeared multiple times, keep the best rank)
+        if ranking[particle] != 0:
+            continue 
+        if particle and killed == 'True':
+            ranking[particle] = position
+            position += 1
+
+    # Save ranking to a file
+    ranking_path = os.path.join(DAILY_RANKING_PATH, f"{iso_date}_ranking.json")
+    with open(ranking_path, 'w') as f:
+        json.dump(ranking, f)
+    print(f"Ranking file created: {ranking_path}")
 
 def get_damage_dealt(graph, particle):
     return sum(stats['dmg_dealt'] for stats in graph.get(particle, {}).values())
@@ -221,6 +242,8 @@ def main(args):
                     cached_graph[attacker][victim] = {'dmg_dealt': 0.0, 'kills': 0}
                 cached_graph[attacker][victim]['dmg_dealt'] += stats['dmg_dealt']
                 cached_graph[attacker][victim]['kills'] += stats['kills']
+
+        create_ranking_file(log_data, iso_date)
 
     save_processed_files(processed_files)
     save_cached_graph(cached_graph)
