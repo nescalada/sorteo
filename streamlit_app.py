@@ -2,68 +2,85 @@ import streamlit as st
 import json
 import os
 import glob
-
-from utils import log_manager
 import pandas as pd
+from utils import log_manager
 
-# Load interaction graph (cached every 5 minutes)
-@st.cache_data(ttl=300)
-def load_interaction_graph(path='data/historic_stats/interaction_graph.json'):
-    abs_path = os.path.join(os.path.dirname(__file__), path)
-    with open(abs_path, 'r') as f:
-        return json.load(f)
-    
-@st.cache_data(ttl=300)
-def load_daily_graph(date_str):
-    path = f"data/daily/{date_str}.json"
-    abs_path = os.path.join(os.path.dirname(__file__), path)
-    with open(abs_path, 'r') as f:
-        daily_data = json.load(f)
-    return daily_data["interactions"], daily_data["winner"]
-
+# ========= BULK DATA LOADERS ========= #
 
 @st.cache_data(ttl=300)
-def load_daily_ranking(date_str):
-    path = f"data/daily/ranking/{date_str}_ranking.json"
-    abs_path = os.path.join(os.path.dirname(__file__), path)
+def load_interaction_graph():
+    """Load the All Time interaction graph."""
+    abs_path = os.path.join(os.path.dirname(__file__), 'data/historic_stats/interaction_graph.json')
     with open(abs_path, 'r') as f:
         return json.load(f)
 
-def get_available_dates():
-    pattern = os.path.join(os.path.dirname(__file__), "data/daily/*.json")
-    files = glob.glob(pattern)
-    # Extract just YYYY-MM-DD from filenames
-    return sorted([os.path.splitext(os.path.basename(f))[0] for f in files], reverse=True)
+@st.cache_data(ttl=300)
+def load_all_daily_graphs():
+    """Load all daily interaction files into a single dict."""
+    base_dir = os.path.dirname(__file__)
+    daily_pattern = os.path.join(base_dir, "data/daily/*.json")
+    ranking_pattern = os.path.join(base_dir, "data/daily/ranking/*.json")
 
-def get_wins(available_dates, player):
-    wins = 0
-    for date in available_dates:
-        _, winner = load_daily_graph(date)
-        if player == winner:
-            wins += 1
+    # Load interaction files
+    all_graphs = {}
+    for path in glob.glob(daily_pattern):
+        date_str = os.path.splitext(os.path.basename(path))[0]
+        with open(path, 'r') as f:
+            daily_data = json.load(f)
+        all_graphs[date_str] = {
+            "interactions": daily_data["interactions"],
+            "winner": daily_data["winner"]
+        }
+
+    # Load ranking files
+    all_rankings = {}
+    for path in glob.glob(ranking_pattern):
+        date_str = os.path.basename(path).replace("_ranking.json", "")
+        with open(path, 'r') as f:
+            all_rankings[date_str] = json.load(f)
+
+    return all_graphs, all_rankings
+
+@st.cache_data(ttl=300)
+def precompute_all_wins(all_graphs):
+    """Count wins for all players in all dates."""
+    wins = {}
+    for date, data in all_graphs.items():
+        winner = data["winner"]
+        wins[winner] = wins.get(winner, 0) + 1
     return wins
 
-st.title("⚔️fIGth club: fight or unfollow") 
+# ========= UTILITY ========= #
 
-available_dates = get_available_dates()
+def get_available_dates(all_graphs):
+    return sorted(all_graphs.keys(), reverse=True)
+
+# ========= APP ========= #
+
+st.title("⚔️ fIGth club: fight or unfollow")
+
+# Bulk load
+all_graphs, all_rankings = load_all_daily_graphs()
+available_dates = get_available_dates(all_graphs)
+
+# Sidebar
 date_options = ["All Time"] + available_dates
 selected_date = st.sidebar.selectbox("Select Date", date_options)
 
-# Load correct data
+# Load appropriate dataset
 if selected_date == "All Time":
     data = load_interaction_graph()
-else:
-    data, winner = load_daily_graph(selected_date)
-    ranking = load_daily_ranking(selected_date)
-
-if selected_date == "All Time":
+    wins_dict = precompute_all_wins(all_graphs)
     stat_options = {
-        "Wins": lambda p: get_wins(available_dates, p),
+        "Wins": lambda p: wins_dict.get(p, 0),
         "Kills": lambda p: log_manager.get_kills(data, p),
         "Deaths": lambda p: log_manager.get_deaths(data, p),
         "Damage Dealt": lambda p: log_manager.get_damage_dealt(data, p),
     }
 else:
+    data = all_graphs[selected_date]["interactions"]
+    winner = all_graphs[selected_date]["winner"]
+    ranking = all_rankings.get(selected_date, {})
     stat_options = {
         "Winner": winner,
         "Kills": lambda p: log_manager.get_kills(data, p),
@@ -72,8 +89,7 @@ else:
 
 selected_stat = st.sidebar.selectbox("Leaderboard Stat", list(stat_options.keys()))
 
-tab1, tab2 = st.tabs(["🏆 Leaderboard", "📊 Player Stats"])
-
+# Player selector
 players = sorted(data.keys())
 if "selected_player" not in st.session_state:
     st.session_state.selected_player = players[0]
@@ -88,10 +104,12 @@ selected_player = st.sidebar.selectbox(
     key="selected_player"
 )
 
+# Tabs
+tab1, tab2 = st.tabs(["🏆 Leaderboard", "📊 Player Stats"])
+
 with tab1:
     st.header(f"🏆 Leaderboard (Top by {selected_stat}) — {selected_date}")
 
-    # If not All Time and stat is Winner, show simple text
     if selected_date != "All Time" and selected_stat == "Winner":
         st.markdown(f"🏅 The winner for {selected_date} is **[{winner}](https://instagram.com/{winner})**!")
     else:
@@ -110,11 +128,9 @@ with tab1:
 
 with tab2:
     def get_instagram_link(player):
-        # Replace with your logic to get Instagram username
         return f"https://instagram.com/{player}"
 
     st.header(f"📊 Stats for [{selected_player}](https://instagram.com/{selected_player})")
-
 
     cols = st.columns(2)
     with cols[0]:
@@ -125,7 +141,7 @@ with tab2:
         st.metric("☠️ Deaths", log_manager.get_deaths(data, selected_player))
 
     if selected_date == "All Time":
-        st.metric("🏅 Wins", get_wins(available_dates, selected_player))
+        st.metric("🏅 Wins", wins_dict.get(selected_player, 0))
     else:
         rank_player = ranking.get(selected_player)
         if rank_player == 0:
@@ -133,7 +149,6 @@ with tab2:
         else:
             st.metric("Ranking", rank_player)
 
-    # Nemesis and Victim calculation
     interactions = data[selected_player]
     nemesis = log_manager.get_nemesis(data, selected_player)
     victim = log_manager.get_victim(data, selected_player)
@@ -156,6 +171,3 @@ with tab2:
             st.markdown(f"[{victim}]({get_instagram_link(victim)}) - You killed them {kills} {times_str}")
         else:
             st.write("No victim found.")
-    
-    ## Interaction graph
-    # st.markdown("### Interaction Graph")
