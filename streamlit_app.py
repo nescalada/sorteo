@@ -64,7 +64,8 @@ all_graphs, all_rankings = load_all_daily_graphs()
 available_dates = get_available_dates(all_graphs)
 
 # Sidebar
-date_options = ["All Time"] + available_dates
+# date_options = ["All Time"] + available_dates
+date_options = available_dates
 selected_date = st.sidebar.selectbox("Select Date", date_options)
 
 # Load appropriate dataset
