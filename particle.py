@@ -17,7 +17,7 @@ class Particle:
         # Random initial position within bounds
         self.pos = position
         angle = random.uniform(0, 2 * math.pi)
-        speed = random.uniform(2, 4)
+        speed = random.uniform(0.5, 1)
         # Initial velocity vector
         self.vel = np.array([math.cos(angle) * speed, math.sin(angle) * speed], dtype=float)
         self.acc_mag = 0.01  # Acceleration magnitude
