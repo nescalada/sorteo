@@ -221,7 +221,7 @@ with tab2:
                 st.metric("Ranking", rank)
 
         # Nemesis and Victim
-        if selected_date == "All Time":
+        if selected_date != "All Time":
             col_nemesis, col_victim = st.columns(2)
             with col_nemesis:
                 st.markdown("### Nemesis")
