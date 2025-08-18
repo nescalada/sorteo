@@ -1,97 +1,168 @@
 import streamlit as st
-import json
-import os
-import glob
+import sqlite3
 import pandas as pd
-from utils import log_manager
+import os
 
-# ========= BULK DATA LOADERS ========= #
+DB_PATH = os.path.join(os.path.dirname(__file__), "data/daily_stats.db")
 
-@st.cache_data(ttl=300)
-def load_interaction_graph():
-    """Load the All Time interaction graph."""
-    abs_path = os.path.join(os.path.dirname(__file__), 'data/historic_stats/interaction_graph.json')
-    with open(abs_path, 'r') as f:
-        return json.load(f)
+# ========= DB HELPERS ========= #
+
+def get_conn():
+    return sqlite3.connect(DB_PATH)
 
 @st.cache_data(ttl=300)
-def load_all_daily_graphs():
-    """Load all daily interaction files into a single dict."""
-    base_dir = os.path.dirname(__file__)
-    daily_pattern = os.path.join(base_dir, "data/daily/*.json")
-    ranking_pattern = os.path.join(base_dir, "data/daily/ranking/*.json")
-
-    # Load interaction files
-    all_graphs = {}
-    for path in glob.glob(daily_pattern):
-        date_str = os.path.splitext(os.path.basename(path))[0]
-        with open(path, 'r') as f:
-            daily_data = json.load(f)
-        all_graphs[date_str] = {
-            "interactions": daily_data["interactions"],
-            "winner": daily_data["winner"]
-        }
-
-    # Load ranking files
-    all_rankings = {}
-    for path in glob.glob(ranking_pattern):
-        date_str = os.path.basename(path).replace("_ranking.json", "")
-        with open(path, 'r') as f:
-            all_rankings[date_str] = json.load(f)
-
-    return all_graphs, all_rankings
+def get_available_dates():
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("SELECT date FROM daily_summary ORDER BY date DESC")
+    dates = [r[0] for r in cursor.fetchall()]
+    conn.close()
+    return ["All Time"] + dates 
 
 @st.cache_data(ttl=300)
-def precompute_all_wins(all_graphs):
-    """Count wins for all players in all dates."""
-    wins = {}
-    for date, data in all_graphs.items():
-        winner = data["winner"]
-        wins[winner] = wins.get(winner, 0) + 1
-    return wins
+def get_daily_summary(date_str):
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("SELECT num_players, winner FROM daily_summary WHERE date = ?", (date_str,))
+    row = cursor.fetchone()
+    conn.close()
+    return {"num_players": row[0], "winner": row[1]} if row else None
 
-# ========= UTILITY ========= #
+@st.cache_data(ttl=300)
+def get_players(date_str):
+    conn = get_conn()
+    cursor = conn.cursor()
+    if date_str == "All Time":
+        cursor.execute("SELECT DISTINCT player FROM player_stats ORDER BY player ASC")
+    else:
+        cursor.execute("SELECT player FROM player_stats WHERE date = ? ORDER BY player ASC", (date_str,))
+    players = [r[0] for r in cursor.fetchall()]
+    conn.close()
+    return players
 
-def get_available_dates(all_graphs):
-    return sorted(all_graphs.keys(), reverse=True)
+
+@st.cache_data(ttl=300)
+def get_top_players(date_str, stat="kills", limit=10):
+    conn = get_conn()
+    cursor = conn.cursor()
+
+    if date_str == "All Time":
+        cursor.execute(f"""
+            SELECT player, SUM({stat}) as total_{stat}
+            FROM player_stats
+            GROUP BY player
+            ORDER BY total_{stat} DESC
+            LIMIT ?
+        """, (limit,))
+      
+    else:
+        cursor.execute(f"""
+            SELECT player, {stat}
+            FROM player_stats
+            WHERE date = ?
+            ORDER BY {stat} DESC
+            LIMIT ?
+        """, (date_str, limit))
+    rows = cursor.fetchall()
+    conn.close()
+    return pd.DataFrame(rows, columns=["Player", stat.capitalize()])
+
+
+@st.cache_data(ttl=300)
+def get_player_stats(date_str, player):
+    conn = get_conn()
+    cursor = conn.cursor()
+    if date_str == "All Time":
+        cursor.execute("""
+            SELECT 
+                SUM(kills), SUM(deaths),
+                SUM(damage_dealt), SUM(damage_received),
+                NULL, NULL
+            FROM player_stats
+            WHERE player = ?
+        """, (player,))
+        row = cursor.fetchone()
+        conn.close()
+        if row:
+            return {
+                "kills": row[0] or 0,
+                "deaths": row[1] or 0,
+                "damage_dealt": row[2] or 0.0,
+                "damage_received": row[3] or 0.0,
+                "nemesis": None,
+                "victim": None,
+            }
+        return None
+    else:
+        cursor.execute("""
+            SELECT kills, deaths, damage_dealt, damage_received, nemesis, victim
+            FROM player_stats
+            WHERE date = ? AND player = ?
+        """, (date_str, player))
+        row = cursor.fetchone()
+        conn.close()
+        if row:
+            return {
+                "kills": row[0],
+                "deaths": row[1],
+                "damage_dealt": row[2],
+                "damage_received": row[3],
+                "nemesis": row[4],
+                "victim": row[5],
+            }
+        return None
+
+@st.cache_data(ttl=300)
+def get_player_rank(date_str, player):
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT rank FROM ranking WHERE date = ? AND player = ?
+    """, (date_str, player))
+    row = cursor.fetchone()
+    conn.close()
+    return row[0] if row else None
+
+@st.cache_data(ttl=300)
+def get_all_winners():
+    """Return all winners per day."""
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("SELECT date, winner FROM daily_summary ORDER BY date DESC")
+    rows = cursor.fetchall()
+    conn.close()
+    return pd.DataFrame(rows, columns=["Date", "Winner"])
+
+
+@st.cache_data(ttl=300)
+def get_wins(date_str, player):
+    """Return how many wins a player has (all-time or specific date)."""
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM daily_summary WHERE winner = ?", (player,))
+    count = cursor.fetchone()[0]
+    conn.close()
+    return count
+
 
 # ========= APP ========= #
 
 st.title("⚔️ fIGth club: fight or unfollow")
 
-# Bulk load
-all_graphs, all_rankings = load_all_daily_graphs()
-available_dates = get_available_dates(all_graphs)
+# Dates
+available_dates = get_available_dates()
+if not available_dates:
+    st.error("No data available in database.")
+    st.stop()
 
-# Sidebar
-# date_options = ["All Time"] + available_dates
-date_options = available_dates
-selected_date = st.sidebar.selectbox("Select Date", date_options)
+selected_date = st.sidebar.selectbox("Select Date", available_dates)
 
-# Load appropriate dataset
-if selected_date == "All Time":
-    data = load_interaction_graph()
-    wins_dict = precompute_all_wins(all_graphs)
-    stat_options = {
-        "Wins": lambda p: wins_dict.get(p, 0),
-        "Kills": lambda p: log_manager.get_kills(data, p),
-        "Deaths": lambda p: log_manager.get_deaths(data, p),
-        "Damage Dealt": lambda p: log_manager.get_damage_dealt(data, p),
-    }
-else:
-    data = all_graphs[selected_date]["interactions"]
-    winner = all_graphs[selected_date]["winner"]
-    ranking = all_rankings.get(selected_date, {})
-    stat_options = {
-        "Winner": winner,
-        "Kills": lambda p: log_manager.get_kills(data, p),
-        "Damage Dealt": lambda p: log_manager.get_damage_dealt(data, p),
-    }
+# Players
+players = get_players(selected_date)
+if not players:
+    st.warning(f"No players found for {selected_date}")
+    st.stop()
 
-selected_stat = st.sidebar.selectbox("Leaderboard Stat", list(stat_options.keys()))
-
-# Player selector
-players = sorted(data.keys())
 if "selected_player" not in st.session_state:
     st.session_state.selected_player = players[0]
 
@@ -109,66 +180,58 @@ selected_player = st.sidebar.selectbox(
 tab1, tab2 = st.tabs(["🏆 Leaderboard", "📊 Player Stats"])
 
 with tab1:
-    st.header(f"🏆 Leaderboard (Top by {selected_stat}) — {selected_date}")
+    st.header(f"🏆 Leaderboard — {selected_date}")
 
-    if selected_date != "All Time" and selected_stat == "Winner":
-        st.markdown(f"🏅 The winner for {selected_date} is **[{winner}](https://instagram.com/{winner})**!")
+    stat_choice = st.sidebar.radio("Leaderboard Stat", ["winners", "kills", "damage_dealt"])
+    if stat_choice == "winners":
+        top_df = get_all_winners()
     else:
-        leaderboard_data = {
-            "Player": players,
-            selected_stat: [stat_options[selected_stat](p) for p in players]
-        }
-        leaderboard_df = pd.DataFrame(leaderboard_data)
-        leaderboard_df = leaderboard_df.sort_values(by=selected_stat, ascending=False).reset_index(drop=True)
+        top_df = get_top_players(selected_date, stat_choice, limit=10)
+    st.dataframe(top_df, use_container_width=True, hide_index=True)
 
-        st.dataframe(
-            leaderboard_df.head(10),
-            use_container_width=True,
-            hide_index=True
-        )
+    # Show winner
+    summary = get_daily_summary(selected_date)
+    if summary:
+        st.markdown(f"🏅 The winner for {selected_date} is **[{summary['winner']}](https://instagram.com/{summary['winner']})**!")
 
 with tab2:
-    def get_instagram_link(player):
-        return f"https://instagram.com/{player}"
-
     st.header(f"📊 Stats for [{selected_player}](https://instagram.com/{selected_player})")
 
-    cols = st.columns(2)
-    with cols[0]:
-        st.metric("💥 Damage Dealt", f"{log_manager.get_damage_dealt(data, selected_player):.2f}")
-        st.metric("🔪 Kills", log_manager.get_kills(data, selected_player))
-    with cols[1]:
-        st.metric("🩸 Damage Received", f"{log_manager.get_damage_received(data, selected_player):.2f}")
-        st.metric("☠️ Deaths", log_manager.get_deaths(data, selected_player))
-
-    if selected_date == "All Time":
-        st.metric("🏅 Wins", wins_dict.get(selected_player, 0))
+    stats = get_player_stats(selected_date, selected_player)
+    wins = get_wins(selected_date, selected_player)
+    if not stats:
+        st.write("No stats available for this player.")
     else:
-        rank_player = ranking.get(selected_player)
-        if rank_player == 0:
-            st.metric("Ranking", "👑 WINNER! The arena bows to your unmatched skill!")
+        cols = st.columns(2)
+        with cols[0]:
+            st.metric("💥 Damage Dealt", f"{stats['damage_dealt']:.2f}")
+            st.metric("🔪 Kills", stats["kills"])
+        with cols[1]:
+            st.metric("🩸 Damage Received", f"{stats['damage_received']:.2f}")
+            st.metric("☠️ Deaths", stats["deaths"])
+        if selected_date == "All Time":
+            st.metric("🏅 Wins", wins)
         else:
-            st.metric("Ranking", rank_player)
+            # Ranking
+            rank = get_player_rank(selected_date, selected_player)
+            if rank == 0:
+                st.metric("Ranking", "👑 WINNER! The arena bows to your unmatched skill!")
+            elif rank is not None:
+                st.metric("Ranking", rank)
 
-    interactions = data[selected_player]
-    nemesis = log_manager.get_nemesis(data, selected_player)
-    victim = log_manager.get_victim(data, selected_player)
+        # Nemesis and Victim
+        if selected_date == "All Time":
+            col_nemesis, col_victim = st.columns(2)
+            with col_nemesis:
+                st.markdown("### Nemesis")
+                if stats["nemesis"]:
+                    st.markdown(f"[{stats['nemesis']}](https://instagram.com/{stats['nemesis']})")
+                else:
+                    st.write("No nemesis found.")
 
-    col_nemesis, col_victim = st.columns(2)
-    with col_nemesis:
-        st.markdown("### Nemesis")
-        if nemesis and data[nemesis][selected_player]['kills'] > 0:
-            kills = data[nemesis][selected_player]['kills']
-            times_str = "time" if kills == 1 else "times"
-            st.markdown(f"[{nemesis}]({get_instagram_link(nemesis)}) - Killed you {kills} {times_str}")
-        else:
-            st.write("No nemesis found.")
-
-    with col_victim:
-        st.markdown("### Victim")
-        if victim and interactions[victim]['kills'] > 0:
-            kills = interactions[victim]['kills']
-            times_str = "time" if kills == 1 else "times"
-            st.markdown(f"[{victim}]({get_instagram_link(victim)}) - You killed them {kills} {times_str}")
-        else:
-            st.write("No victim found.")
+            with col_victim:
+                st.markdown("### Victim")
+                if stats["victim"]:
+                    st.markdown(f"[{stats['victim']}](https://instagram.com/{stats['victim']})")
+                else:
+                    st.write("No victim found.")
