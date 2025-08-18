@@ -180,21 +180,20 @@ selected_player = st.sidebar.selectbox(
 tab1, tab2 = st.tabs(["🏆 Leaderboard", "📊 Player Stats"])
 
 with tab1:
-    st.header(f"🏆 Leaderboard — {selected_date}")
-    if selected_date == "All Time":
-        stat_choice = st.sidebar.radio("Leaderboard Stat", ["kills", "damage_dealt", "winners"])
-    else:
-        stat_choice = st.sidebar.radio("Leaderboard Stat", ["kills", "damage_dealt"])
+    n_players = len(players)
+    st.subheader(f"🏆 Leaderboard for {selected_date} — {n_players} players")
+    stat_choice = st.sidebar.radio("Leaderboard Stat", ["winners", "kills", "damage_dealt"])
+    top_df = pd.DataFrame()
     if stat_choice == "winners":
-        top_df = get_all_winners()
+        if selected_date == "All Time":
+            top_df = get_all_winners()
+        else: 
+            winner = get_daily_summary(selected_date)['winner']
+            st.markdown(f"🏅 The winner for {selected_date} is **[{winner}](https://instagram.com/{winner})**!")
     else:
         top_df = get_top_players(selected_date, stat_choice, limit=10)
-    st.dataframe(top_df, use_container_width=True, hide_index=True)
-
-    # Show winner
-    summary = get_daily_summary(selected_date)
-    if summary:
-        st.markdown(f"🏅 The winner for {selected_date} is **[{summary['winner']}](https://instagram.com/{summary['winner']})**!")
+    if not top_df.empty:
+        st.dataframe(top_df, use_container_width=True, hide_index=True)
 
 with tab2:
     st.header(f"📊 Stats for [{selected_player}](https://instagram.com/{selected_player})")
