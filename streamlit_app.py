@@ -181,8 +181,10 @@ tab1, tab2 = st.tabs(["🏆 Leaderboard", "📊 Player Stats"])
 
 with tab1:
     st.header(f"🏆 Leaderboard — {selected_date}")
-
-    stat_choice = st.sidebar.radio("Leaderboard Stat", ["winners", "kills", "damage_dealt"])
+    if selected_date == "All Time":
+        stat_choice = st.sidebar.radio("Leaderboard Stat", ["kills", "damage_dealt", "winners"])
+    else:
+        stat_choice = st.sidebar.radio("Leaderboard Stat", ["kills", "damage_dealt"])
     if stat_choice == "winners":
         top_df = get_all_winners()
     else:
