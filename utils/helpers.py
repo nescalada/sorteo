@@ -44,7 +44,7 @@ def circular_mask(image):
 
 # Assign positions for particles in a grid-like manner to avoid overlap
 def assign_position(radius, width, height, num_particles):
-        cell_size = 2 * radius + 2
+        cell_size = 2 * radius + 1
         cols = int(width // cell_size)
         rows = int(height // cell_size)
 
@@ -131,7 +131,7 @@ def load_particles(min_radius, max_radius, max_hp, max_speed, acc_magnitude, wid
 
     return particles
 
-def create_log(particle_a, particle_b, force_a, force_b, timestamp):
+def create_log(particle_a, particle_b, timestamp, frame_number):
     killed_a = not particle_a.alive
     killed_b = not particle_b.alive
 
@@ -139,27 +139,28 @@ def create_log(particle_a, particle_b, force_a, force_b, timestamp):
         {
             'Particle': particle_a.id,
             'Opponent': particle_b.id,
-            'Force Received': force_b,
-            'HP After': particle_a.hp,
+            'Frame': frame_number,
             'Killed': killed_a
         },
         {
             'Particle': particle_b.id,
             'Opponent': particle_a.id,
-            'Force Received': force_a,
-            'HP After': particle_b.hp,
+            'Frame': frame_number,
             'Killed': killed_b
         }
     ]
-    with open(f'simulations/{timestamp}_collision_log.csv', 'a') as f:
-        pd.DataFrame(log_entries).to_csv(f, header=f.tell() == 0, index=False)
+
+    df = pd.DataFrame(log_entries)
+    file_path = f'simulations/{timestamp}_collision_log.csv'
+    write_header = not os.path.exists(file_path)
+    df.to_csv(file_path, mode='a', header=write_header, index=False, lineterminator='\n')
 
 # Get grid cell coordinates for a position
 def get_cell_coords(pos, cell_size):
     return int(pos[0] // cell_size), int(pos[1] // cell_size)
 
 # Check collisions using a grid-based approach
-def check_collisions(radius, cell_size, grid_width, grid_height, particles, timestamp):
+def check_collisions(radius, cell_size, grid_width, grid_height, particles, timestamp, frame_number):
 
     # Create empty grid
     grid = [[[] for _ in range(grid_height)] for _ in range(grid_width)]
@@ -219,7 +220,8 @@ def check_collisions(radius, cell_size, grid_width, grid_height, particles, time
                                     a.vel += (new_v1 - v1) * direction
                                     b.vel += (new_v2 - v2) * direction
 
-                                    create_log(a, b, min(force_a, min_hp), min(force_b, min_hp), timestamp)
+                                    if not a.alive or not b.alive:
+                                        create_log(a, b, timestamp, frame_number)
 
 def display_winner(font, particles, screen, width, height, radius):
     winner_shown = True

@@ -15,5 +15,5 @@ colors:
 
 images:
   local: false
-  #path: "img"
+  # path: "img"
   path: followers_info

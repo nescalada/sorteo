@@ -76,7 +76,6 @@ def get_player_stats(date_str, player):
         cursor.execute("""
             SELECT 
                 SUM(kills), SUM(deaths),
-                SUM(damage_dealt), SUM(damage_received),
                 NULL, NULL
             FROM player_stats
             WHERE player = ?
@@ -87,15 +86,13 @@ def get_player_stats(date_str, player):
             return {
                 "kills": row[0] or 0,
                 "deaths": row[1] or 0,
-                "damage_dealt": row[2] or 0.0,
-                "damage_received": row[3] or 0.0,
                 "nemesis": None,
                 "victim": None,
             }
         return None
     else:
         cursor.execute("""
-            SELECT kills, deaths, damage_dealt, damage_received, nemesis, victim
+            SELECT kills, deaths, nemesis, victim
             FROM player_stats
             WHERE date = ? AND player = ?
         """, (date_str, player))
@@ -105,10 +102,8 @@ def get_player_stats(date_str, player):
             return {
                 "kills": row[0],
                 "deaths": row[1],
-                "damage_dealt": row[2],
-                "damage_received": row[3],
-                "nemesis": row[4],
-                "victim": row[5],
+                "nemesis": row[2],
+                "victim": row[3],
             }
         return None
 
@@ -124,6 +119,17 @@ def get_player_rank(date_str, player):
     return row[0] if row else None
 
 @st.cache_data(ttl=300)
+def get_player_time(date_str, player):
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT time FROM ranking WHERE date = ? AND player = ?
+    """, (date_str, player))
+    row = cursor.fetchone()
+    conn.close()
+    return row[0] if row else None
+
+@st.cache_data(ttl=300)
 def get_all_winners():
     """Return all winners per day."""
     conn = get_conn()
@@ -133,9 +139,8 @@ def get_all_winners():
     conn.close()
     return pd.DataFrame(rows, columns=["Date", "Winner"])
 
-
 @st.cache_data(ttl=300)
-def get_wins(date_str, player):
+def get_wins(player):
     """Return how many wins a player has (all-time or specific date)."""
     conn = get_conn()
     cursor = conn.cursor()
@@ -182,7 +187,7 @@ tab1, tab2 = st.tabs(["🏆 Leaderboard", "📊 Player Stats"])
 with tab1:
     n_players = len(players)
     st.subheader(f"🏆 Leaderboard for {selected_date} — {n_players} players")
-    stat_choice = st.sidebar.radio("Leaderboard Stat", ["winners", "kills", "damage_dealt"])
+    stat_choice = st.sidebar.radio("Leaderboard Stat", ["winners", "kills"])
     top_df = pd.DataFrame()
     if stat_choice == "winners":
         if selected_date == "All Time":
@@ -199,26 +204,32 @@ with tab2:
     st.header(f"📊 Stats for [{selected_player}](https://instagram.com/{selected_player})")
 
     stats = get_player_stats(selected_date, selected_player)
-    wins = get_wins(selected_date, selected_player)
     if not stats:
         st.write("No stats available for this player.")
     else:
         cols = st.columns(2)
         with cols[0]:
-            st.metric("💥 Damage Dealt", f"{stats['damage_dealt']:.2f}")
             st.metric("🔪 Kills", stats["kills"])
         with cols[1]:
-            st.metric("🩸 Damage Received", f"{stats['damage_received']:.2f}")
             st.metric("☠️ Deaths", stats["deaths"])
+
+        # Row 2
         if selected_date == "All Time":
-            st.metric("🏅 Wins", wins)
+            with cols[0]:
+                st.metric("🏅 Wins", get_wins(selected_player))
         else:
-            # Ranking
             rank = get_player_rank(selected_date, selected_player)
             if rank == 0:
-                st.metric("Ranking", "👑 WINNER! The arena bows to your unmatched skill!")
+                with cols[0]:
+                    st.metric("Ranking", "1!!! 👑")
             elif rank is not None:
-                st.metric("Ranking", rank)
+                with cols[0]:
+                    st.metric("Ranking", rank)
+
+            time = get_player_time(selected_date, selected_player)
+            if time is not None:
+                with cols[1]:
+                    st.metric("⏱️ Time", f"{time:.2f} s")
 
         # Nemesis and Victim
         if selected_date != "All Time":

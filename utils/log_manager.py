@@ -23,8 +23,6 @@ def init_db():
         player TEXT,
         kills INTEGER,
         deaths INTEGER,
-        damage_dealt REAL,
-        damage_received REAL,
         nemesis TEXT,
         victim TEXT,
         PRIMARY KEY (date, player)
@@ -44,6 +42,7 @@ def init_db():
         date TEXT,
         player TEXT,
         rank INTEGER,
+        time NUMERIC(10,2),
         PRIMARY KEY (date, player)
     )
     """)
@@ -68,33 +67,20 @@ def save_processed_files(filenames):
 
 # ========= GRAPH HELPERS ========= #
 def create_interaction_graph(log_data):
-    interaction_graph = defaultdict(lambda: defaultdict(lambda: {'dmg_dealt': 0.0, 'kills': 0}))
+    interaction_graph = defaultdict(lambda: defaultdict(lambda: {'kills': 0}))
     for entry in log_data:
         particle = entry.get('Particle')
         opponent = entry.get('Opponent')
-        damage_taken = entry.get('Force Received') or entry.get('damage_taken')
         killed = entry.get('Killed')
 
-        if not (particle and opponent and damage_taken):
+        if not (particle and opponent and killed):
             continue
-
-        try:
-            dmg = float(damage_taken)
-        except (ValueError, TypeError):
-            dmg = 0.0
 
         kill_count = 1 if killed == 'True' else 0
 
-        interaction_graph[opponent][particle]['dmg_dealt'] += dmg
         interaction_graph[opponent][particle]['kills'] += kill_count
 
     return {p: dict(opp) for p, opp in interaction_graph.items()}
-
-def get_damage_dealt(graph, particle):
-    return sum(stats['dmg_dealt'] for stats in graph.get(particle, {}).values())
-
-def get_damage_received(graph, particle):
-    return sum(stats.get(particle, {}).get('dmg_dealt', 0.0) for stats in graph.values())
 
 def get_kills(graph, particle):
     return sum(stats['kills'] for stats in graph.get(particle, {}).values())
@@ -102,11 +88,11 @@ def get_kills(graph, particle):
 def get_deaths(graph, particle):
     return sum(stats.get(particle, {}).get('kills', 0) for stats in graph.values())
 
-def get_winner(graph):
-    alive_particles = {p for p in graph if get_deaths(graph, p) == 0}
-    if len(alive_particles) == 1:
-        return list(alive_particles)[0]
-    return None
+def get_winner(conn, iso_date):
+    cur = conn.cursor()
+    cur.execute("SELECT player FROM ranking WHERE date = ? AND rank = 0", (iso_date,))
+    row = cur.fetchone()
+    return row[0] if row else None
 
 
 # ========= DB WRITERS ========= #
@@ -118,7 +104,7 @@ def save_daily_summary(conn, iso_date, graph):
 
     summary = {
         "num_players": len(graph),
-        "winner": get_winner(graph)
+        "winner": get_winner(conn, iso_date)
     }
     cur.execute("INSERT INTO daily_summary (date, num_players, winner) VALUES (?, ?, ?)",
                 (iso_date, summary["num_players"], summary["winner"]))
@@ -132,18 +118,32 @@ def save_daily_ranking(conn, iso_date, log_data):
         return  # already stored
 
     ranking = defaultdict(int)
+    time_map = {}
     position = 2
     for entry in reversed(log_data):
         particle = entry.get('Particle')
         killed = entry.get('Killed')
+        frame = entry.get('Frame', None)
+
         if ranking[particle] != 0:
             continue
         if particle and killed == 'True':
             ranking[particle] = position
+            if frame is not None:
+                time_map[particle] = round(float(frame) / 60, 2)
+            else:
+                time_map[particle] = None
             position += 1
 
-    rows = [(iso_date, player, rank) for player, rank in ranking.items()]
-    cur.executemany("INSERT OR IGNORE INTO ranking (date, player, rank) VALUES (?, ?, ?)", rows)
+    rows = [
+        (iso_date, player, rank, time_map.get(player))
+        for player, rank in ranking.items()
+    ]
+    cur.executemany(
+        "INSERT OR IGNORE INTO ranking (date, player, rank, time) VALUES (?, ?, ?, ?)",
+        rows
+    )
+    
     conn.commit()
 
 
@@ -155,21 +155,23 @@ def save_daily_player_stats(conn, iso_date, graph):
 
     rows = []
     for player in graph:
+        kills = get_kills(graph, player)
+        deaths = get_deaths(graph, player)
+        nemesis = get_nemesis(graph, player)
+        victim = get_victim(graph, player)
         rows.append((
             iso_date,
             player,
-            get_kills(graph, player),
-            get_deaths(graph, player),
-            get_damage_dealt(graph, player),
-            get_damage_received(graph, player),
-            get_nemesis(graph, player),
-            get_victim(graph, player),
+            kills,
+            deaths,
+            nemesis,
+            victim,
         ))
 
     cur.executemany("""
         INSERT OR IGNORE INTO player_stats
-        (date, player, kills, deaths, damage_dealt, damage_received, nemesis, victim)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        (date, player, kills, deaths, nemesis, victim)
+        VALUES (?, ?, ?, ?, ?, ?)
     """, rows)
     conn.commit()
 
@@ -219,7 +221,7 @@ def main(args):
             continue
 
         log_data = []
-        for filename in tqdm(day_files, desc=f"Processing {iso_date}", unit="file", leave=False):
+        for filename in day_files:
             file_path = os.path.join(simulations_dir, filename)
             try:
                 with open(file_path, 'r') as f:
@@ -235,8 +237,8 @@ def main(args):
         daily_graph = create_interaction_graph(log_data)
 
         # Save to DB (idempotent)
-        save_daily_summary(conn, iso_date, daily_graph)
         save_daily_ranking(conn, iso_date, log_data)
+        save_daily_summary(conn, iso_date, daily_graph)
         save_daily_player_stats(conn, iso_date, daily_graph)
 
     save_processed_files(processed_files)

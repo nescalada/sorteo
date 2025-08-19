@@ -47,6 +47,7 @@ num_particles = len(particles)
 
 # Main loop
 while running:
+    frame_number = len(frames)
     clock.tick(FPS)
     screen.fill(BG_COLOR)
 
@@ -79,7 +80,7 @@ while running:
         pygame.time.wait(2000)
         running = False
 
-    check_collisions(RADIUS, CELL_SIZE, grid_width, grid_height, particles, timestamp)
+    check_collisions(RADIUS, CELL_SIZE, grid_width, grid_height, particles, timestamp, frame_number)
 
     # Remove dead particles from the list
     particles = remove_dead_particles(particles)
