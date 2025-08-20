@@ -102,21 +102,29 @@ def load_particles(min_radius, max_radius, max_hp, max_speed, acc_magnitude, wid
         particle_images = []
         usernames = []
         for _, row in tqdm(df.iterrows(), total=len(df), desc="Loading avatars"):
+            username = row['Username']
             img_path = row['Avatar URL']
-            # Download image from URL and load into pygame
 
-            try:
-                response = requests.get(img_path)
-                response.raise_for_status()
-                img_data = BytesIO(response.content)
-                image = pygame.image.load(img_data).convert_alpha()
-                particle_images.append(circular_mask(image))
-            except Exception:
-                # Create a simple colored circle as fallback
-                fallback_surface = pygame.Surface((max_radius*2, max_radius*2), pygame.SRCALPHA)
-                pygame.draw.circle(fallback_surface, (200, 200, 200, 255), (max_radius, max_radius), max_radius)
-                particle_images.append(circular_mask(fallback_surface))
-                print("Error loading image from URL:", img_path)
+            if os.path.exists(f"followers_info/img/{username}.png"):
+                image = pygame.image.load(f"followers_info/img/{username}.png").convert_alpha()
+            else:
+                # Download image from URL and load into pygame
+                try:
+                    response = requests.get(img_path)
+                    response.raise_for_status()
+                    img_data = BytesIO(response.content)
+                    image = pygame.image.load(img_data).convert_alpha()
+                    particle_images.append(circular_mask(image))
+
+                    # Save image
+                    pygame.image.save(image, f"followers_info/img/{username}.png")
+
+                except Exception:
+                    # Create a simple colored circle as fallback
+                    fallback_surface = pygame.Surface((max_radius*2, max_radius*2), pygame.SRCALPHA)
+                    pygame.draw.circle(fallback_surface, (200, 200, 200, 255), (max_radius, max_radius), max_radius)
+                    particle_images.append(circular_mask(fallback_surface))
+                    print("Error loading image from URL:", img_path)
                 
             usernames.append(row['Username'])
 
