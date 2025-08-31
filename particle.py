@@ -24,6 +24,8 @@ class Particle:
         self.hp = max_hp
         self.alive = True
         self.mass = 1.0  
+        self.collision_time = 0        # timestamp de la última colisión
+        self.collision_duration = 0.05  # 2 ms
 
     def move(self):
         if not self.alive:
@@ -56,38 +58,45 @@ class Particle:
                 self.pos[i] = max_pos
                 self.vel[i] *= -1
 
+    def damage(self, force):
+            self.hp -= force
+            # Marcar colisión para efecto rojo
+            self.collision_time = pygame.time.get_ticks() / 1000  # tiempo en segundos
+            if self.hp <= 0:
+                self.alive = False
+                self.vel = np.array([0, 0], dtype=float)
+
     def draw(self, surface):
-        # Gradient color based on HP (green to red)
-        hp_ratio = max(0, min(self.hp / self.max_hp, 1))
-        # Resize the image to match the particle's radius
+        if not self.alive:
+            return  # <-- evita dibujar al perdedor
+
+        pos = (int(self.pos[0]), int(self.pos[1]))
         scaled_image = pygame.transform.smoothscale(self.image, (self.radius * 2, self.radius * 2))
-        img_rect = scaled_image.get_rect(center=(int(self.pos[0]), int(self.pos[1])))
-        # Draw the prepared image
+        img_rect = scaled_image.get_rect(center=pos)
         surface.blit(scaled_image, img_rect)
-        # HP bar with gradient and rounded border
+
+        # --- efecto rojo por colisión ---
+        current_time = pygame.time.get_ticks() / 1000
+        if 0 < current_time - self.collision_time <= self.collision_duration:
+            overlay = pygame.Surface((self.radius*2, self.radius*2), pygame.SRCALPHA)
+            pygame.draw.circle(overlay, (255, 0, 0, 150), (self.radius, self.radius), self.radius)
+            surface.blit(overlay, img_rect)
+
+        # --- HP bar ---
+        hp_ratio = max(0, min(self.hp / self.max_hp, 1))
         bar_width = self.radius * 2
-        bar_height = 8
+        min_bar_height = 2
+        max_bar_height = 8
+        bar_height = int(min_bar_height + (1 - hp_ratio) * (max_bar_height - min_bar_height))
         x = int(self.pos[0]) - self.radius
         y = int(self.pos[1]) - self.radius - 14
-
-        # HP bar background (dark gray, rounded border)
         bg_rect = pygame.Rect(x, y, bar_width, bar_height)
         pygame.draw.rect(surface, (40, 40, 40), bg_rect, border_radius=4)
-
-        # HP bar gradient (red to green)
         hp_bar_len = int(hp_ratio * bar_width)
         for i in range(hp_bar_len):
             grad_ratio = i / bar_width
             r = int(255 * (1 - grad_ratio))
             g = int(255 * grad_ratio)
             color = (r, g, 40)
-            pygame.draw.rect(surface, color, (x + i, y, 1, bar_height), border_radius=0)
-
-        # Thin white border
+            pygame.draw.rect(surface, color, (x + i, y, 1, bar_height))
         pygame.draw.rect(surface, (220,220,220), bg_rect, width=1, border_radius=4)
-
-    def damage(self, force):
-        self.hp -= force
-        if self.hp <= 0:
-            self.alive = False
-            self.vel = np.array([0, 0], dtype=float)

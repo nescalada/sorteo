@@ -5,11 +5,17 @@ import numpy as np
 import os
 import pandas as pd
 import random
+import re
+import time
 
 from particle import Particle
 import requests
 from io import BytesIO
 from tqdm import tqdm
+
+def safe_filename(name: str) -> str:
+    # Permitir solo letras, números, guiones y guiones bajos
+    return re.sub(r'[^a-zA-Z0-9_-]', '_', name)
 
 def load_config(path='config.yaml'):
     with open(path, 'r') as f:
@@ -105,29 +111,30 @@ def load_particles(min_radius, max_radius, max_hp, max_speed, acc_magnitude, wid
             username = row['Username']
             img_path = row['Avatar URL']
 
-            if os.path.exists(f"followers_info/img/{username}.png"):
-                image = pygame.image.load(f"followers_info/img/{username}.png").convert_alpha()
+            filename = safe_filename(username)
+            filepath = f"followers_info/img/{filename}.png"
+
+            if os.path.exists(filepath):
+                image = pygame.image.load(filepath).convert_alpha()
+                particle_images.append(circular_mask(image))
             else:
-                # Download image from URL and load into pygame
                 try:
-                    response = requests.get(img_path)
+                    response = requests.get(img_path, timeout=10)
                     response.raise_for_status()
                     img_data = BytesIO(response.content)
                     image = pygame.image.load(img_data).convert_alpha()
                     particle_images.append(circular_mask(image))
-
-                    # Save image
-                    pygame.image.save(image, f"followers_info/img/{username}.png")
-
-                except Exception:
-                    # Create a simple colored circle as fallback
+                    # Guardar solo si no existe
+                    pygame.image.save(image, filepath)
+                except Exception as e:
+                    print(f"Error loading image for {username}: {e}")
+                    # fallback genérico
                     fallback_surface = pygame.Surface((max_radius*2, max_radius*2), pygame.SRCALPHA)
                     pygame.draw.circle(fallback_surface, (200, 200, 200, 255), (max_radius, max_radius), max_radius)
                     particle_images.append(circular_mask(fallback_surface))
-                    print("Error loading image from URL:", img_path)
                 
             usernames.append(row['Username'])
-
+        
         num_particles = len(particle_images)
 
         radius = get_dynamic_radius(particle_images, width, height, min_radius, max_radius, change_radius=False)
@@ -136,26 +143,31 @@ def load_particles(min_radius, max_radius, max_hp, max_speed, acc_magnitude, wid
 
         # Create particles
         particles = [Particle(usernames[i], particle_images[i], radius, max_hp, max_speed, acc_magnitude, width, height, positions[i]) for i in range(num_particles)]
-
+        
     return particles
 
+ranking = []
+kill_feed = []
+
 def create_log(particle_a, particle_b, timestamp, frame_number):
+    global ranking, kill_feed
     killed_a = not particle_a.alive
     killed_b = not particle_b.alive
 
+    if killed_a and particle_a not in ranking:
+        ranking.append(particle_a)
+        kill_feed.append((str(particle_b.id), str(particle_a.id), time.time()))  # killer, victim, tiempo
+    if killed_b and particle_b not in ranking:
+        ranking.append(particle_b)
+        kill_feed.append((str(particle_a.id), str(particle_b.id), time.time()))  # killer, victim, tiempo
+
+    # limitar a X eventos mostrados
+    if len(kill_feed) > 1:
+        kill_feed.pop(0)  # borra el más viejo
+
     log_entries = [
-        {
-            'Particle': particle_a.id,
-            'Opponent': particle_b.id,
-            'Frame': frame_number,
-            'Killed': killed_a
-        },
-        {
-            'Particle': particle_b.id,
-            'Opponent': particle_a.id,
-            'Frame': frame_number,
-            'Killed': killed_b
-        }
+        {'Particle': particle_a.id, 'Opponent': particle_b.id, 'Frame': frame_number, 'Killed': killed_a},
+        {'Particle': particle_b.id, 'Opponent': particle_a.id, 'Frame': frame_number, 'Killed': killed_b}
     ]
 
     df = pd.DataFrame(log_entries)
@@ -232,16 +244,40 @@ def check_collisions(radius, cell_size, grid_width, grid_height, particles, time
                                         create_log(a, b, timestamp, frame_number)
 
 def display_winner(font, particles, screen, width, height, radius):
-    winner_shown = True
+    global ranking
+    # Último vivo
     winner = next(p for p in particles if p.alive)
-    winner_text = font.render(f"Winner: {winner.id}!", True, (255, 215, 0))
-    text_rect = winner_text.get_rect(center=(width // 2, height // 2 - 1 *radius))
-    screen.blit(winner_text, text_rect)
-    # Show winner's image in the center, scaled up
-    diameter = radius * 4
-    winner_img = pygame.transform.smoothscale(winner.image, (diameter, diameter))
-    img_rect = winner_img.get_rect(center=(width // 2, height // 2 + 1.5 * radius))
-    screen.blit(winner_img, img_rect)
+    if winner not in ranking:
+        ranking.append(winner)
+
+    # Posiciones verticales para los textos, centrados horizontalmente
+    start_y = int(height * 0.5)   # antes estaba height - radius*2
+    spacing = 50                   # separación entre cada línea de texto
+    padding = 10                   # espacio alrededor del texto para el fondo negro
+
+    colors = [(255, 215, 0), (192, 192, 192), (205, 127, 50)]  # colores para 1°, 2°, 3°
+    labels = ['Ganó', '2do', '3ro']
+
+    top3 = ranking[-1:-4:-1]  # último vivo y los dos anteriores
+
+    # Mostrar imagen del primer puesto centrada y detrás de los textos
+    img_diameter = radius * 3
+    img = pygame.transform.smoothscale(top3[0].image, (img_diameter, img_diameter))
+    img_rect = img.get_rect(center=(width // 2, height // 4))
+    screen.blit(img, img_rect)
+
+    # Mostrar los textos por encima con fondo negro semi-transparente
+    for i, particle in enumerate(top3):
+        text = font.render(f"{labels[i]}: {particle.id}", True, colors[i])
+        text_rect = text.get_rect(center=(width // 2, start_y + i * spacing))
+
+        # Fondo negro semi-transparente
+        bg_surface = pygame.Surface((text_rect.width + 2*padding, text_rect.height + 2*padding), pygame.SRCALPHA)
+        bg_surface.fill((0, 0, 0, 150))  # 150 = opacidad (0 transparente, 255 opaco)
+        screen.blit(bg_surface, (text_rect.left - padding, text_rect.top - padding))
+
+        screen.blit(text, text_rect)
+
     pygame.display.flip()
 
 def add_particle_to_frames(screen, frames):
