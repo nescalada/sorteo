@@ -64,7 +64,7 @@ def draw_top_leaderboard(screen, particles, small_font):
     
     # Draw TOP table
     table_x = 20
-    table_y = 20
+    table_y = 60
     row_height = 25
     
     # Title
@@ -163,7 +163,7 @@ while running:
         # contador solo si no hay ganador
         text_str = f"Seguidores vivos: {alive_count}"
         text = font.render(text_str, True, (255, 255, 255))
-        text_rect = text.get_rect(topleft=(100, 220))
+        text_rect = text.get_rect(topleft=(100, 260))
 
         padding = 5
         bg_surface = pygame.Surface((text_rect.width + 2*padding, text_rect.height + 2*padding), pygame.SRCALPHA)
@@ -178,7 +178,7 @@ while running:
 
     # ---- DIBUJAR KILL FEED ----
     padding = 5
-    start_y = 20
+    start_y = 60
     now = time.time()
 
     # mostrar solo las muertes que tengan <= 1s de vida o mientras sean parte de las últimas 5
