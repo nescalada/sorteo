@@ -1,6 +1,6 @@
 screen:
   width: 480
-  height: 640
+  height: 480
   fps: 60
 
 particles:
